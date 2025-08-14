@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>필수안전수칙 교육</title>
+  <style>
+    :root{--brand:#0a66c2; --bg:#cfe8f6; --btn:#123b7a}
+    html,body{margin:0;padding:0;background:var(--bg);}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; color:#0b2d3e}
+    .wrap{max-width:760px;margin:18px auto;padding:12px}
+    .panel{background:rgba(255,255,255,.7);border-radius:28px;padding:22px 18px 28px;border:1px solid rgba(0,0,0,.06)}
+    .title-big{font-size:44px;font-weight:900;color:#37a2ff;text-align:center;text-shadow:0 4px 0 rgba(255,255,255,.8)}
+    .footer{display:flex;justify-content:center;align-items:center;margin-top:12px;color:#224}
+    .box{background:#e6f3fb;border:1px solid #d6e8f6;border-radius:18px;padding:14px}
+    .btn{display:block;width:100%;margin-top:14px;padding:16px;border-radius:14px;border:0;background:#123b7a;color:#fff;font-weight:800;font-size:18px;opacity:.5;cursor:not-allowed;transition:.2s}
+    .btn.enabled{opacity:1;cursor:pointer}
+    .row{display:grid;grid-template-columns:1fr;gap:12px}
+    input{width:100%;padding:16px 14px;font-size:18px;border-radius:16px;border:0;outline:none;background:#fff;box-shadow:inset 0 0 0 1px #bcd2e4;color:#123}
+    input::placeholder{color:#8aa4b6}
+    video, .yt-holder{width:100%;border-radius:18px;background:#000;min-height:220px;box-shadow:0 6px 16px rgba(0,0,0,.1)}
+    .yt-holder{position:relative;padding-top:56.25%}
+    .yt-holder iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;border-radius:18px}
+    .muted{color:#456; font-size:14px;margin-top:8px}
+    .hidden{display:none}
+    iframe.forms{width:100%;height:680px;border:0;border-radius:18px;background:#fff}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel" id="step1">
+      <div class="title-big">필수안전수칙</div>
+      <div class="row" style="margin-top:22px">
+        <input id="org" placeholder="소속" maxlength="60" autocomplete="organization"/>
+        <input id="name" placeholder="이름" maxlength="20" autocomplete="name"/>
+      </div>
+      <button id="btnStart" class="btn">영상 시청하기</button>
+      <div class="footer">자이 C&A</div>
+    </div>
+
+    <div class="panel hidden" id="step2">
+      <div class="title-big">필수안전수칙</div>
+      <!-- Video: YouTube OR MP4 -->
+      <div id="ytBlock" class="yt-holder hidden"><div id="player"></div></div>
+      <video id="mp4" class="hidden" controls playsinline preload="metadata"></video>
+      <div class="muted">진행률: <span id="pct">0</span>% (탭 이탈 시 타이머 일시정지, 건너뛰기 제한)</div>
+      <button id="btnFinish" class="btn" style="margin-top:18px;">시청 완료</button>
+      <div class="footer">자이 C&A</div>
+    </div>
+
+    <div class="panel hidden" id="step3">
+      <div class="title-big">필수안전수칙</div>
+      <div class="box" style="margin-top:12px">아래 폼을 작성한 뒤 <b>제출</b>을 눌러 주세요.</div>
+      <iframe id="formsFrame" class="forms" title="교육 수료 확인 양식"></iframe>
+      <div class="footer">자이 C&A</div>
+    </div>
+  </div>
+
+  <script>
+  // ====== 설정 ======
+  const CONFIG = {
+    provider: 'youtube',                // 'youtube' 또는 'mp4'
+    // 이제 "ID"나 "풀 URL" 아무거나 넣어도 됩니다.
+    ytVideoId: 'https://youtu.be/OFbewrZy03M',
+    mp4Url: 'VIDEO_SRC_HERE',
+    formsUrl: 'https://forms.office.com/r/jvWzDVdSHN?embed=true'
+  };
+  // ===================
+
+  const step1 = document.getElementById('step1');
+  const step2 = document.getElementById('step2');
+  const step3 = document.getElementById('step3');
+  const org = document.getElementById('org');
+  const nameEl = document.getElementById('name');
+  const btnStart = document.getElementById('btnStart');
+
+  const pct = document.getElementById('pct');
+  const btnFinish = document.getElementById('btnFinish');
+
+  const ytBlock = document.getElementById('ytBlock');
+  const mp4 = document.getElementById('mp4');
+
+  const formsFrame = document.getElementById('formsFrame');
+
+  // STEP1: 유효성 → 버튼 활성화
+  function checkInputs(){
+    const ok = org.value.trim() && nameEl.value.trim();
+    btnStart.classList.toggle('enabled', ok);
+    btnStart.disabled = !ok;
+  }
+  org.addEventListener('input', checkInputs);
+  nameEl.addEventListener('input', checkInputs);
+  checkInputs();
+
+  btnStart.addEventListener('click', ()=>{
+    step1.classList.add('hidden');
+    step2.classList.remove('hidden');
+    startVideo();
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+
+  // 공통 상태
+  let required = 0, watched = 0, maxAllowed = 0, tick = null;
+  const visible = ()=> document.visibilityState === 'visible';
+  function doneCheck(current, duration){
+    if (!required && duration) required = Math.floor(duration * 0.95);
+    const percent = required ? Math.min(100, Math.floor((watched/required)*100)) : 0;
+    pct.textContent = percent;
+    if (current >= duration - 0.5 && watched >= required){
+      btnFinish.classList.add('enabled');
+      btnFinish.disabled = false;
+    }
+  }
+
+  // ====== YouTube 모드 ======
+  let ytPlayer = null;
+  function parseYouTubeId(input){
+    if(!input) return '';
+    const idLike = input.match(/^[a-zA-Z0-9_-]{11}$/);
+    if(idLike) return idLike[0];
+    let m = input.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+    if(m) return m[1];
+    m = input.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+    if(m) return m[1];
+    m = input.match(/\/embed\/([a-zA-Z0-9_-]{11})|\/shorts\/([a-zA-Z0-9_-]{11})/);
+    if(m) return m[1] || m[2];
+    return '';
+  }
+  function startVideo(){
+    if(CONFIG.provider === 'youtube'){
+      const id = parseYouTubeId(CONFIG.ytVideoId);
+      if(!id){ alert('유튜브 ID/URL이 올바르지 않습니다.'); return; }
+      ytBlock.classList.remove('hidden');
+      ensureYT().then(()=>{
+        ytPlayer = new YT.Player('player', {
+          videoId: id,
+          playerVars: { rel:0, modestbranding:1, playsinline:1 },
+          events: { onStateChange: onYTState }
+        });
+      });
+    } else {
+      mp4.classList.remove('hidden');
+      mp4.src = CONFIG.mp4Url;
+      mp4.addEventListener('loadedmetadata', ()=> { required = Math.floor(mp4.duration*0.95); });
+      mp4.addEventListener('play', startTickMp4);
+      mp4.addEventListener('pause', stopTick);
+      document.addEventListener('visibilitychange', ()=> visible() && !mp4.paused ? startTickMp4() : stopTick());
+      mp4.addEventListener('seeking', ()=>{ if(mp4.currentTime > maxAllowed + 2) mp4.currentTime = maxAllowed; });
+    }
+  }
+
+  function startTickMp4(){
+    if(tick) return;
+    tick = setInterval(()=>{
+      if(!mp4.paused && visible() && !mp4.seeking){
+        watched++; maxAllowed = Math.max(maxAllowed, mp4.currentTime);
+        doneCheck(mp4.currentTime, mp4.duration||0);
+      }
+    }, 1000);
+  }
+  function stopTick(){ if(tick){ clearInterval(tick); tick = null; } }
+
+  function ensureYT(){
+    if(window.YT && window.YT.Player) return Promise.resolve();
+    return new Promise(res=>{
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+      window.onYouTubeIframeAPIReady = ()=> res();
+    });
+  }
+  function onYTState(e){
+    const state = e.data;
+    if(state === 1){
+      if(tick) return;
+      tick = setInterval(()=>{
+        if(!visible()) return;
+        const cur = ytPlayer.getCurrentTime();
+        const dur = ytPlayer.getDuration() || 0;
+        watched++;
+        if(cur > maxAllowed + 2){ ytPlayer.seekTo(maxAllowed, true); }
+        else { maxAllowed = Math.max(maxAllowed, cur); }
+        doneCheck(cur, dur);
+      }, 1000);
+    } else {
+      stopTick();
+    }
+  }
+
+  // ====== 95% 후: 폼 임베드 표시 ======
+  btnFinish.disabled = true;
+  btnFinish.addEventListener('click', ()=>{
+    step3.classList.remove('hidden');
+    if(!formsFrame.src){
+      formsFrame.src = CONFIG.formsUrl;
+    }
+    step3.scrollIntoView({behavior:'smooth'});
+  });
+  </script>
+</body>
+</html>
